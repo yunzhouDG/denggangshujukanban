@@ -424,12 +424,9 @@ all_brands = sorted(set(df_main["品牌"].dropna().unique()) | set(df_order["品
 all_brands = [b for b in all_brands if b and b != "未知"]
 all_cats = sorted([c for c in df_main["品类"].dropna().unique() if c and c != "未知"])
 all_centers = sorted([c for c in df_main["运中"].dropna().unique() if c and c != "未知"])
-all_categories = sorted([c for c in df_order["商品类目"].dropna().unique() if c and c != "未知"])
-
 sel_brand = st.sidebar.multiselect("🏷️ 品牌", all_brands, default=[])
 sel_cat = st.sidebar.multiselect("📦 品类", all_cats, default=[])
 sel_center = st.sidebar.multiselect("📍 运营中心", all_centers, default=[])
-sel_category = st.sidebar.multiselect("🏷️ 商品类目", all_categories, default=[])
 
 # 应用筛选
 def apply_filters(dm, do):
@@ -447,8 +444,6 @@ def apply_filters(dm, do):
     if sel_center:
         dm2 = dm2[dm2["运中"].isin(sel_center)]
         do2 = do2[do2["运中"].isin(sel_center)]
-    if sel_category:
-        do2 = do2[do2["商品类目"].isin(sel_category)]
     return dm2, do2
 
 df_m, df_o = apply_filters(df_main, df_order)
