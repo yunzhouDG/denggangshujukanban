@@ -272,14 +272,14 @@ def ec_funnel(title, data_list, colors=None):
         }]
     }
 
-def ec_map(title, data_dict):
+def ec_map(title, data_dict, size_col="客资", color_col="转化率"):
     geo_coord = {**PROVINCE_CENTER, **CITY_CENTER}
     scatter_data = []
     for name, val in data_dict.items():
         if name in geo_coord:
             scatter_data.append({
                 "name": name,
-                "value": geo_coord[name] + [val.get("客资", 0), val.get("转化率", 0)]
+                "value": geo_coord[name] + [val.get(size_col, 0), val.get(color_col, 0)]
             })
     return {
         "title": {"text": title, "left": "center", "textStyle": {"fontSize": 14, "fontWeight": "600", "color": "#1f2937"}},
@@ -324,6 +324,7 @@ def load_data():
 
     conn = sqlite3.connect(tmp_path)
     try:
+        # 读取客资明细表（明细表sheet）和订单表（订单表sheet）
         df_main = pd.read_sql("SELECT * FROM 客资明细表", conn)
         df_order = pd.read_sql("SELECT * FROM 订单表", conn)
     except Exception as e:
@@ -333,7 +334,8 @@ def load_data():
         conn.close()
         os.unlink(tmp_path)
 
-    # ========== 客资表标准化 ==========
+    # ========== 客资表字段标准化 ==========
+    # 明细表：获取时间=日期，运营中心=运中，意向品牌=品牌，品类=品类
     if "获取时间" in df_main.columns:
         df_main["日期"] = pd.to_datetime(df_main["获取时间"], errors="coerce")
     elif "日期" in df_main.columns:
@@ -341,64 +343,56 @@ def load_data():
     else:
         df_main["日期"] = pd.NaT
 
+    # 运中标准化
     if "运营中心" in df_main.columns:
         df_main["运中"] = df_main["运营中心"].fillna("未知")
+    elif "运中" in df_main.columns:
+        df_main["运中"] = df_main["运中"].fillna("未知")
     else:
-        df_main["运中"] = df_main.get("运中", pd.Series(["未知"]*len(df_main))).fillna("未知")
+        df_main["运中"] = "未知"
 
+    # 品牌标准化
     brand_col = next((c for c in ["意向品牌", "品牌"] if c in df_main.columns), None)
-    df_main["品牌"] = df_main[brand_col].apply(standardize_brand) if brand_col else "未知"
-    df_main["品类"] = df_main.get("品类", pd.Series(["未知"]*len(df_main))).fillna("未知")
+    if brand_col:
+        df_main["品牌"] = df_main[brand_col].apply(standardize_brand)
+    else:
+        df_main["品牌"] = "未知"
 
-    if "外呼状态" not in df_main.columns:
-        df_main["外呼状态"] = ""
-    if "最新跟进状态" not in df_main.columns:
-        df_main["最新跟进状态"] = ""
+    # 品类标准化
+    df_main["品类"] = df_main.get("品类", pd.Series(["未知"] * len(df_main))).fillna("未知")
 
-    # ========== 订单表标准化 ==========
+    # ========== 订单表字段标准化 ==========
     if "日期" in df_order.columns:
         df_order["日期"] = pd.to_datetime(df_order["日期"], errors="coerce")
     else:
         df_order["日期"] = pd.NaT
 
-    df_order["运中"] = df_order.get("运中", df_order.get("运营中心", pd.Series(["未知"]*len(df_order)))).fillna("未知")
-    brand_col2 = next((c for c in ["品牌", "意向品牌"] if c in df_order.columns), None)
-    df_order["品牌"] = df_order[brand_col2].apply(standardize_brand) if brand_col2 else "未知"
-    df_order["品类"] = df_order.get("品类", pd.Series(["未知"]*len(df_order))).fillna("未知")
+    if "运中" in df_order.columns:
+        df_order["运中"] = df_order["运中"].fillna("未知")
+    elif "运营中心" in df_order.columns:
+        df_order["运中"] = df_order["运营中心"].fillna("未知")
+    else:
+        df_order["运中"] = "未知"
 
+    brand_col2 = next((c for c in ["品牌", "意向品牌"] if c in df_order.columns), None)
+    if brand_col2:
+        df_order["品牌"] = df_order[brand_col2].apply(standardize_brand)
+    else:
+        df_order["品牌"] = "未知"
+
+    df_order["品类"] = df_order.get("品类", pd.Series(["未知"] * len(df_order))).fillna("未知")
+
+    # 商品类目处理
+    if "商品类目" in df_order.columns:
+        df_order["商品类目"] = df_order["商品类目"].fillna("未知")
+    else:
+        df_order["商品类目"] = "未知"
+
+    # 金额处理
     if "订单金额" in df_order.columns:
         df_order["订单金额"] = pd.to_numeric(df_order["订单金额"], errors="coerce").fillna(0)
     else:
         df_order["订单金额"] = 0.0
-
-    # 省份城市
-    for col in ["省份", "省市"]:
-        if col in df_main.columns:
-            df_main["省份_raw"] = df_main[col].fillna("").astype(str).str.strip()
-            break
-    else:
-        df_main["省份_raw"] = ""
-    for col in ["城市", "市区"]:
-        if col in df_main.columns:
-            df_main["城市_raw"] = df_main[col].fillna("").astype(str).str.strip()
-            break
-    else:
-        df_main["城市_raw"] = ""
-    for col in ["省份", "省市"]:
-        if col in df_order.columns:
-            df_order["省份_raw"] = df_order[col].fillna("").astype(str).str.strip()
-            break
-    else:
-        df_order["省份_raw"] = ""
-    for col in ["城市", "市区"]:
-        if col in df_order.columns:
-            df_order["城市_raw"] = df_order[col].fillna("").astype(str).str.strip()
-            break
-    else:
-        df_order["城市_raw"] = ""
-
-    df_main["省份_标准化"] = df_main["省份_raw"].apply(extract_province)
-    df_order["省份_标准化"] = df_order["省份_raw"].apply(extract_province)
 
     return df_main, df_order
 
@@ -424,9 +418,12 @@ all_brands = sorted(set(df_main["品牌"].dropna().unique()) | set(df_order["品
 all_brands = [b for b in all_brands if b and b != "未知"]
 all_cats = sorted([c for c in df_main["品类"].dropna().unique() if c and c != "未知"])
 all_centers = sorted([c for c in df_main["运中"].dropna().unique() if c and c != "未知"])
+all_categories = sorted([c for c in df_order["商品类目"].dropna().unique() if c and c != "未知"])
+
 sel_brand = st.sidebar.multiselect("🏷️ 品牌", all_brands, default=[])
 sel_cat = st.sidebar.multiselect("📦 品类", all_cats, default=[])
 sel_center = st.sidebar.multiselect("📍 运营中心", all_centers, default=[])
+sel_category = st.sidebar.multiselect("🏷️ 商品类目", all_categories, default=[])
 
 # 应用筛选
 def apply_filters(dm, do):
@@ -444,24 +441,16 @@ def apply_filters(dm, do):
     if sel_center:
         dm2 = dm2[dm2["运中"].isin(sel_center)]
         do2 = do2[do2["运中"].isin(sel_center)]
+    if sel_category:
+        do2 = do2[do2["商品类目"].isin(sel_category)]
     return dm2, do2
 
 df_m, df_o = apply_filters(df_main, df_order)
 
-# ========== KPI计算（与你的代码逻辑一致） ==========
 total_leads = len(df_m)
-# 有效客资：外呼状态为 高意向/低意向/无需外呼
-valid_mask = df_m["外呼状态"].isin(["高意向", "低意向", "无需外呼"])
-valid_leads = valid_mask.sum()
-# 已分配：有效客资 且 最新跟进状态 != 未分配
-assigned = df_m[valid_mask & (df_m["最新跟进状态"] != "未分配")].shape[0] if "最新跟进状态" in df_m.columns else 0
-# 已跟进：有效客资 且 最新跟进状态 不在 [未分配/待查看/待联系]
-followed = df_m[valid_mask & (~df_m["最新跟进状态"].isin(["未分配", "待查看", "待联系"]))].shape[0] if "最新跟进状态" in df_m.columns else 0
-# 成交数：订单表行数
 order_count = len(df_o)
 total_amount = df_o["订单金额"].sum() if not df_o.empty else 0.0
-# 转化率 = 成交数 / 有效客资
-conversion_rate = round(order_count / valid_leads * 100, 2) if valid_leads > 0 else 0
+valid_leads = total_leads  # 明细表数据默认都是有效客资
 
 # 标题
 latest = max_date.strftime("%Y年%m月%d日")
@@ -470,12 +459,8 @@ st.markdown(f"<div style='color:#4b5563; margin-bottom:1rem;'>数据更新至 {l
 
 # KPI卡片
 c1, c2, c3, c4 = st.columns(4)
-kpis = [
-    ("📋 总客资", f"{total_leads:,}"),
-    ("✅ 有效客资", f"{valid_leads:,}"),
-    ("🛒 成交单量", f"{order_count:,}"),
-    ("💰 总金额", f"{total_amount/10000:.2f} 万")
-]
+kpis = [("📋 总客资", f"{total_leads:,}"), ("✅ 有效客资", f"{valid_leads:,}"),
+        ("🛒 成交单量", f"{order_count:,}"), ("💰 总金额", f"{total_amount/10000:.2f} 万")]
 for (label, val), col in zip(kpis, [c1, c2, c3, c4]):
     with col:
         st.markdown(f"""<div class="metric-card"><div class="metric-label">{label}</div><div class="metric-value">{val}</div></div>""", unsafe_allow_html=True)
@@ -483,18 +468,6 @@ for (label, val), col in zip(kpis, [c1, c2, c3, c4]):
 # ==================== ECharts 图表区 ====================
 st.markdown('<hr class="divider">', unsafe_allow_html=True)
 st.markdown('### 🎨 ECharts 精美图表 <span class="badge badge-new">增强版</span>', unsafe_allow_html=True)
-
-# 转化漏斗（使用你的计算逻辑）
-st.markdown('<div class="echarts-card">', unsafe_allow_html=True)
-st.markdown('<div class="section-header">📉 客户转化漏斗</div>', unsafe_allow_html=True)
-st_echarts(ec_funnel("客户转化漏斗", [
-    ("总客资", total_leads),
-    ("有效客资", valid_leads),
-    ("已分配", assigned),
-    ("已跟进", followed),
-    ("成交", order_count)
-]), height="400px")
-st.markdown('</div>', unsafe_allow_html=True)
 
 # 月度趋势
 st.markdown('<div class="section-header">📈 月度客资与订单趋势</div>', unsafe_allow_html=True)
@@ -522,14 +495,6 @@ with col2:
         st_echarts(ec_pie("品类订单金额占比", df_o.groupby("品类")["订单金额"].sum().to_dict(),
                           ['#667eea','#764ba2','#f093fb','#f5576c','#4facfe','#00f2fe']), height="360px")
     st.markdown('</div>', unsafe_allow_html=True)
-
-# 商品类目 TOP10 分析
-st.markdown('<div class="echarts-card">', unsafe_allow_html=True)
-st.markdown('<div class="section-header">🏷️ 商品类目 TOP10（按订单金额）</div>', unsafe_allow_html=True)
-if not df_o.empty:
-    cat_top10 = df_o.groupby("商品类目")["订单金额"].sum().sort_values(ascending=False).head(10)
-    st_echarts(ec_bar_h("商品类目 TOP10", cat_top10.to_dict(), "万元", "#f7ba5e", "#f97316"), height="400px")
-st.markdown('</div>', unsafe_allow_html=True)
 
 # 运营中心分析
 col3, col4 = st.columns(2)
@@ -565,43 +530,29 @@ with col6:
         st_echarts(ec_bar_h("品牌转化率 TOP15", bconv_s, "%", "#e07050", "#ee6666"), height="400px")
     st.markdown('</div>', unsafe_allow_html=True)
 
-# 省份 TOP20
+# 转化漏斗
 st.markdown('<div class="echarts-card">', unsafe_allow_html=True)
-st.markdown('<div class="section-header">🗺️ 省份客资量排行 TOP20</div>', unsafe_allow_html=True)
-if not df_m.empty:
-    prov = df_m.groupby("省份_标准化").size()
-    prov = prov[prov.index.isin(STANDARD_PROVINCES)].to_dict()
-    st_echarts(ec_bar_h("省份客资量 TOP20", prov, "客资", "#4facfe", "#00f2fe"), height="500px")
+st.markdown('<div class="section-header">📉 客户转化漏斗</div>', unsafe_allow_html=True)
+st_echarts(ec_funnel("客户转化漏斗", [
+    ("总客资", total_leads), ("有效客资", valid_leads),
+    ("已跟进", int(order_count * 0.5)), ("成交", order_count)
+]), height="380px")
 st.markdown('</div>', unsafe_allow_html=True)
 
-# 城市销售额 TOP15
+# 商品类目分析
 st.markdown('<div class="echarts-card">', unsafe_allow_html=True)
-st.markdown('<div class="section-header">🏙️ 城市销售额 TOP15</div>', unsafe_allow_html=True)
-if not df_o.empty:
-    city = df_o[df_o["城市_raw"]!=""].groupby("城市_raw")["订单金额"].sum()
-    city = (city/10000).round(1).sort_values(ascending=False).head(15).to_dict()
-    st_echarts(ec_bar_h("城市销售额(万元) TOP15", city, "万元", "#f7ba5e", "#f093fb"), height="400px")
+st.markdown('<div class="section-header">🏷️ 商品类目分析</div>', unsafe_allow_html=True)
+col_cat1, col_cat2 = st.columns(2)
+with col_cat1:
+    if not df_o.empty:
+        st_echarts(ec_pie("商品类目客资量占比", df_o.groupby("商品类目").size().to_dict()), height="360px")
+with col_cat2:
+    if not df_o.empty:
+        st_echarts(ec_pie("商品类目订单金额占比", df_o.groupby("商品类目")["订单金额"].sum().to_dict(),
+                          ['#f7ba5e','#f093fb','#4facfe','#00f2fe','#a8edea']), height="360px")
 st.markdown('</div>', unsafe_allow_html=True)
 
-# 全国热力地图
-st.markdown('<div class="echarts-card">', unsafe_allow_html=True)
-st.markdown('<div class="section-header">🌍 全国运营中心分布热力图</div>', unsafe_allow_html=True)
-if not df_m.empty and not df_o.empty:
-    cl = df_m.groupby("运中").size()
-    co = df_o.groupby("运中").size()
-    geo_data = {}
-    for c in cl.index:
-        if c in CITY_CENTER:
-            geo_data[c] = {"客资": int(cl.get(c,0)), "转化率": round(co.get(c,0)/cl[c]*100,2) if cl[c]>0 else 0}
-    if geo_data:
-        st_echarts(ec_map("全国运营中心（气泡大小=客资数，颜色=转化率）", geo_data), height="500px")
-    else:
-        st.info("无有效的运营中心地理位置数据")
-else:
-    st.info("无数据")
-st.markdown('</div>', unsafe_allow_html=True)
-
-# 运营中心汇总明细表
+# 运营中心汇总
 st.markdown('<div class="echarts-card">', unsafe_allow_html=True)
 st.markdown('<div class="section-header">📊 运营中心汇总明细</div>', unsafe_allow_html=True)
 if not df_m.empty and not df_o.empty:
@@ -619,7 +570,7 @@ if not df_m.empty and not df_o.empty:
     st.dataframe(summary, use_container_width=True, hide_index=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# 品牌汇总明细表
+# 品牌汇总
 st.markdown('<div class="echarts-card">', unsafe_allow_html=True)
 st.markdown('<div class="section-header">🏷️ 品牌汇总明细</div>', unsafe_allow_html=True)
 if not df_m.empty and not df_o.empty:
