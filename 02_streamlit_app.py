@@ -382,6 +382,12 @@ def load_data():
 
     df_order["品类"] = df_order.get("品类", pd.Series(["未知"] * len(df_order))).fillna("未知")
 
+    # 商品类目处理
+    if "商品类目" in df_order.columns:
+        df_order["商品类目"] = df_order["商品类目"].fillna("未知")
+    else:
+        df_order["商品类目"] = "未知"
+
     # 金额处理
     if "订单金额" in df_order.columns:
         df_order["订单金额"] = pd.to_numeric(df_order["订单金额"], errors="coerce").fillna(0)
@@ -412,10 +418,12 @@ all_brands = sorted(set(df_main["品牌"].dropna().unique()) | set(df_order["品
 all_brands = [b for b in all_brands if b and b != "未知"]
 all_cats = sorted([c for c in df_main["品类"].dropna().unique() if c and c != "未知"])
 all_centers = sorted([c for c in df_main["运中"].dropna().unique() if c and c != "未知"])
+all_categories = sorted([c for c in df_order["商品类目"].dropna().unique() if c and c != "未知"])
 
 sel_brand = st.sidebar.multiselect("🏷️ 品牌", all_brands, default=[])
 sel_cat = st.sidebar.multiselect("📦 品类", all_cats, default=[])
 sel_center = st.sidebar.multiselect("📍 运营中心", all_centers, default=[])
+sel_category = st.sidebar.multiselect("🏷️ 商品类目", all_categories, default=[])
 
 # 应用筛选
 def apply_filters(dm, do):
@@ -433,6 +441,8 @@ def apply_filters(dm, do):
     if sel_center:
         dm2 = dm2[dm2["运中"].isin(sel_center)]
         do2 = do2[do2["运中"].isin(sel_center)]
+    if sel_category:
+        do2 = do2[do2["商品类目"].isin(sel_category)]
     return dm2, do2
 
 df_m, df_o = apply_filters(df_main, df_order)
@@ -527,6 +537,19 @@ st_echarts(ec_funnel("客户转化漏斗", [
     ("总客资", total_leads), ("有效客资", valid_leads),
     ("已跟进", int(order_count * 0.5)), ("成交", order_count)
 ]), height="380px")
+st.markdown('</div>', unsafe_allow_html=True)
+
+# 商品类目分析
+st.markdown('<div class="echarts-card">', unsafe_allow_html=True)
+st.markdown('<div class="section-header">🏷️ 商品类目分析</div>', unsafe_allow_html=True)
+col_cat1, col_cat2 = st.columns(2)
+with col_cat1:
+    if not df_o.empty:
+        st_echarts(ec_pie("商品类目客资量占比", df_o.groupby("商品类目").size().to_dict()), height="360px")
+with col_cat2:
+    if not df_o.empty:
+        st_echarts(ec_pie("商品类目订单金额占比", df_o.groupby("商品类目")["订单金额"].sum().to_dict(),
+                          ['#f7ba5e','#f093fb','#4facfe','#00f2fe','#a8edea']), height="360px")
 st.markdown('</div>', unsafe_allow_html=True)
 
 # 运营中心汇总
