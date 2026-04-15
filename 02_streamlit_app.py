@@ -558,74 +558,16 @@ with c4:
 st.markdown('<hr class="divider">', unsafe_allow_html=True)
 st.markdown('### 🎨 ECharts 精美图表 <span class="badge badge-new">增强版</span>', unsafe_allow_html=True)
 
-# ========== 漏斗图（总客资-有效客资-分配-跟进-成交） ==========
+# 转化漏斗（使用你的计算逻辑）
 st.markdown('<div class="echarts-card">', unsafe_allow_html=True)
-st.markdown('<div class="section-header">📉 销售漏斗</div>', unsafe_allow_html=True)
-st_echarts(ec_funnel("销售漏斗", [
+st.markdown('<div class="section-header">📉 客户转化漏斗</div>', unsafe_allow_html=True)
+st_echarts(ec_funnel("客户转化漏斗", [
     ("总客资", total_leads),
     ("有效客资", valid_leads),
     ("已分配", assigned),
     ("已跟进", followed),
     ("成交", order_count)
-], ['#3b82f6', '#10b981', '#f59e0b', '#f97316', '#ef4444']), height="420px")
-st.markdown('</div>', unsafe_allow_html=True)
-
-# ========== 四率折线图 ==========
-valid_rate = valid_leads / total_leads if total_leads > 0 else 0
-assign_rate = assigned / valid_leads if valid_leads > 0 else 0
-follow_rate = followed / assigned if assigned > 0 else 0
-deal_rate = order_count / valid_leads if valid_leads > 0 else 0
-
-st.markdown('<div class="echarts-card">', unsafe_allow_html=True)
-st.markdown('<div class="section-header">📈 四率趋势</div>', unsafe_allow_html=True)
-# 月度趋势：按月计算四率
-if not df_m.empty:
-    df_m2 = df_m.copy()
-    df_o2 = df_o.copy()
-    df_m2["年月"] = df_m2["日期"].dt.to_period("M").astype(str)
-    df_o2["年月"] = df_o2["日期"].dt.to_period("M").astype(str)
-    months = sorted(set(df_m2["年月"]) | set(df_o2["年月"]))
-
-    m_total = []; m_valid = []; m_assign = []; m_follow = []; m_deal = []
-    for m in months:
-        dm_mo = df_m2[df_m2["年月"]==m]
-        valid_m = dm_mo["外呼状态"].isin(["高意向","低意向","无需外呼"]).sum()
-        assign_m = int(dm_mo[dm_mo["外呼状态"].isin(["高意向","低意向","无需外呼"]) & (dm_mo["最新跟进状态"]!="未分配")].shape[0]) if "最新跟进状态" in dm_mo.columns else 0
-        follow_m = int(dm_mo[dm_mo["外呼状态"].isin(["高意向","低意向","无需外呼"]) & (~dm_mo["最新跟进状态"].isin(["未分配","待查看","待联系"]))].shape[0]) if "最新跟进状态" in dm_mo.columns else 0
-        deal_m = len(df_o2[df_o2["年月"]==m])
-        m_total.append(len(dm_mo)); m_valid.append(valid_m); m_assign.append(assign_m); m_follow.append(follow_m); m_deal.append(deal_m)
-
-    # 四率
-    eff_rates = [round(v/t*100, 1) if t>0 else 0 for v, t in zip(m_valid, m_total)]
-    asgn_rates = [round(a/v*100, 1) if v>0 else 0 for a, v in zip(m_assign, m_valid)]
-    flw_rates = [round(f/a*100, 1) if a>0 else 0 for f, a in zip(m_follow, m_assign)]
-    d_rate = [round(d/v*100, 1) if v>0 else 0 for d, v in zip(m_deal, m_valid)]
-
-    four_rate_chart = {
-        "title": {"text": "月度四率趋势（%）", "left": "center", "textStyle": {"fontSize": 14, "fontWeight": "600", "color": "#1f2937"}},
-        "tooltip": {"trigger": "axis"},
-        "legend": {"top": 0, "data": ["有效率", "分配率", "跟进率", "成交率"], "textStyle": {"color": "#6b7280"}},
-        "grid": {"left": 50, "right": 30, "bottom": 30, "top": 45},
-        "xAxis": {"type": "category", "data": months, "axisLabel": {"color": "#4a4e57", "rotate": 30}},
-        "yAxis": {"type": "value", "axisLabel": {"color": "#606776", "formatter": "{value}%"}, "splitLine": {"lineStyle": {"color": "#ebeef5"}}},
-        "series": [
-            {"name": "有效率", "type": "line", "data": eff_rates, "smooth": True, "lineStyle": {"width": 2, "color": "#10b981"}, "itemStyle": {"color": "#10b981"}, "symbol": "circle", "symbolSize": 5},
-            {"name": "分配率", "type": "line", "data": asgn_rates, "smooth": True, "lineStyle": {"width": 2, "color": "#f59e0b"}, "itemStyle": {"color": "#f59e0b"}, "symbol": "circle", "symbolSize": 5},
-            {"name": "跟进率", "type": "line", "data": flw_rates, "smooth": True, "lineStyle": {"width": 2, "color": "#f97316"}, "itemStyle": {"color": "#f97316"}, "symbol": "circle", "symbolSize": 5},
-            {"name": "成交率", "type": "line", "data": d_rate, "smooth": True, "lineStyle": {"width": 2, "color": "#ef4444"}, "itemStyle": {"color": "#ef4444"}, "symbol": "circle", "symbolSize": 5},
-        ]
-    }
-    st_echarts(four_rate_chart, height="400px")
-
-# 展示当前四率数值
-col_f1, col_f2, col_f3, col_f4 = st.columns(4)
-rate_labels = [("有效率", f"{valid_rate*100:.1f}%", "#10b981"),
-              ("分配率", f"{assign_rate*100:.1f}%", "#f59e0b"),
-              ("跟进率", f"{follow_rate*100:.1f}%", "#f97316"),
-              ("成交率", f"{deal_rate*100:.1f}%", "#ef4444")]
-for col, (label, val, color) in zip([col_f1, col_f2, col_f3, col_f4], rate_labels):
-    with col:
-        st.markdown(f'<div class="echarts-card" style="text-align:center"><div class="metric-label">{label}</div><div class="metric-value" style="font-size:1.6rem;color:{color}">{val}</div></div>', unsafe_allow_html=True)
+]), height="400px")
 st.markdown('</div>', unsafe_allow_html=True)
 
 # 月度趋势
@@ -644,21 +586,25 @@ if not df_m.empty and not df_o.empty:
 # 日转化率面积图
 st.markdown('<div class="section-header">📈 日转化率趋势（面积图）</div>', unsafe_allow_html=True)
 if not df_m.empty and not df_o.empty:
-    daily_m = df_m.groupby(df_m["日期"].dt.date).agg(
+    # 过滤掉NaT日期
+    df_m_clean = df_m.dropna(subset=["日期"])
+    daily_m = df_m_clean.groupby(df_m_clean["日期"].dt.date).agg(
         总客资=("品牌", "count"),
         有效客资=("外呼状态", lambda x: x.isin(["高意向","低意向","无需外呼"]).sum())
     ).reset_index()
-    daily_o = df_o.groupby(df_o["日期"].dt.date).size().reset_index(name="成交数")
-    daily_m = daily_m.merge(daily_o, on="日期", how="left").fillna(0)
-    daily_m["转化率"] = daily_m["成交数"] / daily_m["有效客资"].replace(0, pd.NA)
-    daily_m["日期_str"] = daily_m["日期"].apply(lambda d: d.strftime("%m-%d") if hasattr(d, "strftime") else str(d))
+    daily_o = df_o.dropna(subset=["日期"]).groupby(df_o["日期"].dt.date).size().reset_index(name="成交数")
+    daily_m = daily_m.merge(daily_o, on="日期", how="left")
+    daily_m["成交数"] = pd.to_numeric(daily_m["成交数"], errors="coerce").fillna(0)
+    daily_m["有效客资"] = pd.to_numeric(daily_m["有效客资"], errors="coerce").fillna(0)
+    daily_m["转化率"] = daily_m.apply(lambda r: round(r["成交数"]/r["有效客资"]*100,2) if r["有效客资"]>0 else 0, axis=1)
+    dates_str = [str(d) for d in daily_m["日期"]]
     conv_area = {
         "title": {"text": "每日转化率趋势", "left": "center", "textStyle": {"fontSize": 14, "fontWeight": "600", "color": "#1f2937"}},
-        "tooltip": {"trigger": "axis", "formatter": lambda p: f"{p[0].name}<br/>转化率: {(p[0].value or 0)*100:.2f}%"},
+        "tooltip": {"trigger": "axis"},
         "grid": {"left": 50, "right": 30, "bottom": 30, "top": 45},
-        "xAxis": {"type": "category", "data": list(daily_m["日期_str"]), "axisLabel": {"color": "#4a4e57", "rotate": 30}},
+        "xAxis": {"type": "category", "data": dates_str, "axisLabel": {"color": "#4a4e57", "rotate": 30}},
         "yAxis": {"type": "value", "axisLabel": {"color": "#606776", "formatter": "{value}%"}, "splitLine": {"lineStyle": {"color": "#ebeef5"}}},
-        "series": [{"name": "转化率", "type": "line", "data": [(v or 0)*100 for v in daily_m["转化率"]], "smooth": True,
+        "series": [{"name": "转化率", "type": "line", "data": [float(v) for v in daily_m["转化率"]], "smooth": True,
                    "lineStyle": {"width": 2, "color": "#ef4444"},
                    "itemStyle": {"color": "#ef4444"},
                    "areaStyle": {"color": {"type": "linear", "x": 0, "y": 0, "x2": 0, "y2": 1,
