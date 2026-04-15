@@ -11,6 +11,10 @@ import os
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from streamlit_echarts import st_echarts
+import streamlit.components.v1 as components
+from pyecharts.charts import Map, Geo, EffectScatter
+from pyecharts import options as opts
+from pyecharts.globals import GeoType, RenderType
 
 st.set_page_config(layout="wide", page_title="天猫新零售数据看板", page_icon="📊")
 
@@ -27,7 +31,7 @@ st.markdown("""
         background: linear-gradient(135deg, #2b5fde 0%, #4a90e2 100%);
         border-bottom: 1px solid #d0dff7;
         padding: 18px 32px;
-        display: flex; align-items: center; justify-content: space-between;
+        display: flex; align-items: center; justify-content: center; flex-direction: column; text-align: center;
         border-radius: 0;
         margin: -1rem -1rem 1rem -1rem;
     }
@@ -271,38 +275,45 @@ def ec_funnel(title, data_list, colors=None):
     }
 
 def ec_map(title, data_dict):
+    """使用 pyecharts 渲染中国地图"""
     geo_coord = {**PROVINCE_CENTER, **CITY_CENTER}
-    scatter_data = []
+    
+    # 使用 Geo 地图（支持城市散点）
+    geo = (
+        Geo(init_opts=opts.InitOpts(width="100%", height="500px", renderer=RenderType.SVGGEN))
+        .add_schema(
+            maptype="china",
+            itemstyle_opts=opts.ItemStyleOpts(
+                area_color="#e8f4ff",
+                border_color="#a0c4e8",
+                border_width=1
+            ),
+            emphasis_itemstyle_opts=opts.ItemStyleOpts(area_color="#c8e6ff"),
+            is_roam=True,
+            zoom=1.2
+        )
+    )
+    
     for name, val in data_dict.items():
         if name in geo_coord:
-            scatter_data.append({
-                "name": name,
-                "value": geo_coord[name] + [val.get("客资", 0), val.get("转化率", 0)]
-            })
-    return {
-        "title": {"text": title, "left": "center", "textStyle": {"fontSize": 14, "fontWeight": "600", "color": "#1f2937"}},
-        "tooltip": {
-            "trigger": "item",
-            "formatter": lambda p: f"{p.name}<br/>客资数: {p.value[2] if len(p.value)>2 else '-'}<br/>转化率: {p.value[3] if len(p.value)>3 else '-'}%" if len(p.value) > 2 else p.name
-        },
-        "geo": {
-            "map": "china", "roam": True, "zoom": 1.2,
-            "itemStyle": {"areaColor": "#e8f4ff", "borderColor": "#a0c4e8", "borderWidth": 1},
-            "emphasis": {"itemStyle": {"areaColor": "#c8e6ff"}},
-            "label": {"show": False}
-        },
-        "series": [{
-            "type": "effectScatter", "coordinateSystem": "geo",
-            "data": scatter_data,
-            "symbolSize": lambda v: max(8, min(40, v[2] / 100)),
-            "itemStyle": {
-                "color": {"type": "radial", "x": 0.5, "y": 0.5, "r": 0.5,
-                          "colorStops": [{"offset": 0, "color": "#27ae60"}, {"offset": 1, "color": "#0d6e3f"}]}
-            },
-            "emphasis": {"scale": 1.5},
-            "rippleEffect": {"brushType": "stroke", "scale": 3}
-        }]
-    }
+            geo.add_coordinate(name, geo_coord[name][0], geo_coord[name][1])
+            geo.add(
+                "",
+                [(name, val.get("客资", 0))],
+                symbol_size=lambda v: max(8, min(40, v / 100)),
+                color="#27ae60"
+            )
+    
+    geo.set_series_opts(
+        label_opts=opts.LabelOpts(is_show=False),
+        effect_opts=opts.EffectOpts(symbol_size=12, brush_type='stroke', scale=3)
+    )
+    geo.set_global_opts(
+        title_opts=opts.TitleOpts(title=title, pos_left="center", title_textstyle_opts=opts.TextStyleOpts(font_size=14, font_weight="600", color="#1f2937")),
+        tooltip_opts=opts.TooltipOpts(trigger="item", formatter="{b}<br/>客资数: {c}"),
+        visualmap_opts=opts.VisualMapOpts(min_=0, max_=max([v.get("客资", 0) for v in data_dict.values()]) if data_dict else 1000, is_piecewise=False, text_color="#666")
+    )
+    return geo
 
 # ==================== 数据加载 ====================
 @st.cache_data(ttl=3600)
@@ -406,8 +417,7 @@ if df_main.empty:
     st.error("客资明细表为空")
     st.stop()
 
-# 筛选器
-st.sidebar.markdown("## 🎛️ 筛选面板")
+# 日期范围
 if not df_main["日期"].isna().all():
     min_date = df_main["日期"].min().date()
     max_date = df_main["日期"].max().date()
@@ -415,16 +425,26 @@ else:
     min_date = datetime.today().date()
     max_date = datetime.today().date()
 
-start_date = st.sidebar.date_input("📅 开始日期", min_date)
-end_date = st.sidebar.date_input("📅 结束日期", max_date)
-
 all_brands = sorted(set(df_main["品牌"].dropna().unique()) | set(df_order["品牌"].dropna().unique()))
 all_brands = [b for b in all_brands if b and b != "未知"]
 all_cats = sorted([c for c in df_main["品类"].dropna().unique() if c and c != "未知"])
 all_centers = sorted([c for c in df_main["运中"].dropna().unique() if c and c != "未知"])
-sel_brand = st.sidebar.multiselect("🏷️ 品牌", all_brands, default=[])
-sel_cat = st.sidebar.multiselect("📦 品类", all_cats, default=[])
-sel_center = st.sidebar.multiselect("📍 运营中心", all_centers, default=[])
+
+# 筛选器（标题下方）
+with st.container():
+    st.markdown('<div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px;">', unsafe_allow_html=True)
+    sc1, sc2, sc3, sc4, sc5 = st.columns([1,1,1,1,1])
+    with sc1:
+        start_date = st.date_input("开始", min_date, key="start")
+    with sc2:
+        end_date = st.date_input("结束", max_date, key="end")
+    with sc3:
+        sel_brand = st.multiselect("品牌", all_brands, default=[], key="brand")
+    with sc4:
+        sel_cat = st.multiselect("品类", all_cats, default=[], key="cat")
+    with sc5:
+        sel_center = st.multiselect("运中", all_centers, default=[], key="center")
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # 应用筛选
 def apply_filters(dm, do):
@@ -479,7 +499,7 @@ tl_d = len(dm_d); vl_d = int(dm_d["外呼状态"].isin(["高意向","低意向",
 tl_m = len(dm_m); vl_m = int(dm_m["外呼状态"].isin(["高意向","低意向","无需外呼"]).sum()); oc_m = len(do_m); ta_m = float(do_m["订单金额"].sum()) if not do_m.empty else 0.0
 
 latest = max_date.strftime("%Y年%m月%d日")
-st.markdown('<div class="main-header"><div><h1>🏬 天猫新零售数据看板</h1><div class=sub>客资数据 &middot; 订单数据 &middot; 转化漏斗分析</div></div><div class=update-time>数据更新至 ' + latest + '</div></div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header"><div><h1>🏬 天猫新零售数据看板</h1><div class=sub>客资数据 &middot; 订单数据 &middot; 转化漏斗分析 &nbsp;|&nbsp; 数据更新至 ' + latest + '</div></div></div>', unsafe_allow_html=True)
 
 st.markdown('<div class="kpi-row">', unsafe_allow_html=True)
 c1, c2, c3, c4 = st.columns(4)
@@ -637,7 +657,8 @@ if not df_m.empty and not df_o.empty:
         if c in CITY_CENTER:
             geo_data[c] = {"客资": int(cl.get(c,0)), "转化率": round(co.get(c,0)/cl[c]*100,2) if cl[c]>0 else 0}
     if geo_data:
-        st_echarts(ec_map("全国运营中心（气泡大小=客资数，颜色=转化率）", geo_data), height="500px")
+        chart = ec_map("全国运营中心（气泡大小=客资数，颜色=转化率）", geo_data)
+        components.html(chart.render_embed(), height=520, scrolling=True)
     else:
         st.info("无有效的运营中心地理位置数据")
 else:
