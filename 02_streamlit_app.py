@@ -11,57 +11,60 @@ import os
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from streamlit_echarts import st_echarts
-import streamlit.components.v1 as components
-from pyecharts.charts import Map, Geo, EffectScatter
+from pyecharts.charts import Geo, EffectScatter
 from pyecharts import options as opts
 from pyecharts.globals import GeoType, RenderType
 
 st.set_page_config(layout="wide", page_title="天猫新零售数据看板", page_icon="📊")
 
-# ==================== 精美样式（与HTML预览版一致） ====================
+# ==================== 精美样式 ====================
 st.markdown("""
 <style>
-    .stApp {
-        background: #f0f2f5;
-        color: #1f2329;
-        font-family: 'PingFang SC','Microsoft YaHei',sans-serif;
-    }
+    .stApp { background: #f0f2f5; color: #1f2329; font-family: 'PingFang SC','Microsoft YaHei',sans-serif; }
+
     /* 顶部标题栏 */
     .main-header {
         background: linear-gradient(135deg, #2b5fde 0%, #4a90e2 100%);
         border-bottom: 1px solid #d0dff7;
-        padding: 18px 32px;
+        padding: 16px 32px 14px;
         display: flex; align-items: center; justify-content: center; flex-direction: column; text-align: center;
-        border-radius: 0;
-        margin: -1rem -1rem 1rem -1rem;
+        margin: -1rem -1rem 0 -1rem;
     }
     .main-header h1 { font-size: 22px; font-weight: 700; color: #fff; letter-spacing: 2px; margin: 0; }
-    .main-header .sub { font-size: 13px; color: rgba(255,255,255,0.75); margin-top: 4px; }
-    .main-header .update-time { font-size: 12px; color: rgba(255,255,255,0.6); }
+    .main-header .sub { font-size: 13px; color: rgba(255,255,255,0.8); margin-top: 4px; }
+
+    /* 筛选器容器 */
+    .filter-bar {
+        background: #fff; border: 1px solid #e4e7ed; border-radius: 10px;
+        padding: 12px 20px; margin: 12px 0 16px;
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .filter-bar label { font-size: 12px; color: #606776; font-weight: 600; margin-bottom: 2px; display: block; }
+    .filter-sep { width: 1px; height: 30px; background: #e4e7ed; margin: 0 4px; }
 
     /* KPI 卡片行 */
     .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
     .kpi-card {
-        background: #ffffff; border: 1px solid #e4e7ed; border-radius: 12px;
-        padding: 20px 22px; position: relative; overflow: hidden;
+        background: #fff; border: 1px solid #e4e7ed; border-radius: 12px;
+        padding: 18px 20px; position: relative; overflow: hidden;
         transition: border-color .2s, box-shadow .2s;
     }
     .kpi-card:hover { border-color: #4a90e2; box-shadow: 0 4px 20px rgba(74,144,226,0.12); }
     .kpi-card .kpi-label { font-size: 13px; color: #909399; margin-bottom: 8px; }
-    .kpi-card .kpi-value { font-size: 32px; font-weight: 700; line-height: 1; }
+    .kpi-card .kpi-value { font-size: 30px; font-weight: 700; line-height: 1; }
     .kpi-card .kpi-sub { font-size: 12px; color: #b0b5bf; margin-top: 8px; }
-    .kpi-card .kpi-icon { position: absolute; right: 18px; top: 18px; font-size: 28px; opacity: .12; }
     .kpi-1 .kpi-value { color: #2b7de9; }
     .kpi-2 .kpi-value { color: #2db55d; }
     .kpi-3 .kpi-value { color: #e6604a; }
     .kpi-4 .kpi-value { color: #9b59b6; }
+    .compare-up { color: #ef4444; }
+    .compare-down { color: #22c55e; }
 
     /* 图表卡片 */
     .chart-card {
-        background: #ffffff; border: 1px solid #e4e7ed; border-radius: 12px;
-        padding: 18px 20px; transition: border-color .2s, box-shadow .2s;
+        background: #fff; border: 1px solid #e4e7ed; border-radius: 12px;
+        padding: 18px 20px; margin-bottom: 16px;
     }
-    .chart-card:hover { border-color: #c0d4f0; box-shadow: 0 2px 12px rgba(74,144,226,0.08); }
     .card-title {
         font-size: 14px; font-weight: 600; color: #303641; margin-bottom: 14px;
         display: flex; align-items: center; gap: 8px;
@@ -71,16 +74,11 @@ st.markdown("""
         background: #4a90e2; border-radius: 2px;
     }
 
-    /* 分隔标题 */
-    .section-title {
-        font-size: 15px; font-weight: 700; color: #909399; letter-spacing: 1px;
-        margin: 20px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #ebeef5;
-        display: flex; align-items: center; gap: 8px;
+    /* Streamlit widget overrides */
+    .stTextInput > div > div > input,
+    .stTextInput > div > div > div > input {
+        border-radius: 8px !important;
     }
-
-    /* Streamlit原生元素适配 */
-    .stTabs [data-baseweb="tab-list"] { gap: 8px }
-    .stTabs [data-baseweb="tab"] { border-radius: 8px 8px 0 0; padding: 8px 16px; }
     [data-testid="stHorizontalBlock"] { gap: 16px; }
 </style>
 """, unsafe_allow_html=True)
@@ -105,7 +103,6 @@ PROVINCE_CENTER = {
     '新疆维吾尔自治区': [87.6168, 43.8256], '台湾省': [121.5200, 25.0300],
     '香港特别行政区': [114.1700, 22.2700], '澳门特别行政区': [113.5400, 22.1900]
 }
-
 CITY_CENTER = {
     '杭州市': [120.1551, 30.2741], '宁波市': [121.5495, 29.8683],
     '温州市': [120.6998, 28.0006], '成都市': [104.0668, 30.5728],
@@ -119,7 +116,6 @@ CITY_CENTER = {
     '沈阳市': [123.4315, 41.8057], '大连市': [121.6147, 38.9140],
     '北京市': [116.4074, 39.9042], '上海市': [121.4737, 31.2304],
 }
-
 STANDARD_PROVINCES = set(PROVINCE_CENTER.keys())
 
 # ==================== 辅助函数 ====================
@@ -274,46 +270,37 @@ def ec_funnel(title, data_list, colors=None):
         }]
     }
 
-def ec_map(title, data_dict):
-    """使用 pyecharts 渲染中国地图"""
+def ec_map_html(title, data_dict):
+    """使用 pyecharts 生成地图 HTML"""
     geo_coord = {**PROVINCE_CENTER, **CITY_CENTER}
-    
-    # 使用 Geo 地图（支持城市散点）
     geo = (
-        Geo(init_opts=opts.InitOpts(width="100%", height="500px", renderer=RenderType.SVGGEN))
+        Geo(init_opts=opts.InitOpts(width="100%", height="520px", renderer=RenderType.SVGGEN))
         .add_schema(
             maptype="china",
-            itemstyle_opts=opts.ItemStyleOpts(
-                area_color="#e8f4ff",
-                border_color="#a0c4e8",
-                border_width=1
-            ),
+            itemstyle_opts=opts.ItemStyleOpts(area_color="#e8f4ff", border_color="#a0c4e8", border_width=1),
             emphasis_itemstyle_opts=opts.ItemStyleOpts(area_color="#c8e6ff"),
-            is_roam=True,
-            zoom=1.2
+            is_roam=True, zoom=1.2
         )
     )
-    
     for name, val in data_dict.items():
         if name in geo_coord:
             geo.add_coordinate(name, geo_coord[name][0], geo_coord[name][1])
-            geo.add(
-                "",
-                [(name, val.get("客资", 0))],
-                symbol_size=lambda v: max(8, min(40, v / 100)),
-                color="#27ae60"
-            )
-    
-    geo.set_series_opts(
-        label_opts=opts.LabelOpts(is_show=False),
-        effect_opts=opts.EffectOpts(symbol_size=12, brush_type='stroke', scale=3)
+    if data_dict:
+        max_val = max([v.get("客资", 0) for v in data_dict.values()]) or 1000
+    else:
+        max_val = 1000
+    geo.add(
+        "", [(n, v.get("客资", 0)) for n, v in data_dict.items() if n in geo_coord],
+        symbol_size=lambda v: max(8, min(40, v / max_val * 500)) if max_val else 10,
+        color="#4a90e2"
     )
+    geo.set_series_opts(label_opts=opts.LabelOpts(is_show=False))
     geo.set_global_opts(
         title_opts=opts.TitleOpts(title=title, pos_left="center", title_textstyle_opts=opts.TextStyleOpts(font_size=14, font_weight="600", color="#1f2937")),
         tooltip_opts=opts.TooltipOpts(trigger="item", formatter="{b}<br/>客资数: {c}"),
-        visualmap_opts=opts.VisualMapOpts(min_=0, max_=max([v.get("客资", 0) for v in data_dict.values()]) if data_dict else 1000, is_piecewise=False, text_color="#666")
+        visualmap_opts=opts.VisualMapOpts(min_=0, max_=max_val, is_piecewise=False, text_color="#666")
     )
-    return geo
+    return geo.render_embed()
 
 # ==================== 数据加载 ====================
 @st.cache_data(ttl=3600)
@@ -330,7 +317,6 @@ def load_data():
             with zf.open(db_files[0]) as f:
                 tmp.write(f.read())
             tmp_path = tmp.name
-
     conn = sqlite3.connect(tmp_path)
     try:
         df_main = pd.read_sql("SELECT * FROM 客资明细表", conn)
@@ -342,7 +328,7 @@ def load_data():
         conn.close()
         os.unlink(tmp_path)
 
-    # ========== 客资表标准化 ==========
+    # 客资表标准化
     if "获取时间" in df_main.columns:
         df_main["日期"] = pd.to_datetime(df_main["获取时间"], errors="coerce")
     elif "日期" in df_main.columns:
@@ -364,7 +350,7 @@ def load_data():
     if "最新跟进状态" not in df_main.columns:
         df_main["最新跟进状态"] = ""
 
-    # ========== 订单表标准化 ==========
+    # 订单表标准化
     if "日期" in df_order.columns:
         df_order["日期"] = pd.to_datetime(df_order["日期"], errors="coerce")
     else:
@@ -430,43 +416,47 @@ all_brands = [b for b in all_brands if b and b != "未知"]
 all_cats = sorted([c for c in df_main["品类"].dropna().unique() if c and c != "未知"])
 all_centers = sorted([c for c in df_main["运中"].dropna().unique() if c and c != "未知"])
 
-# 筛选器（标题下方）
+latest = max_date.strftime("%Y年%m月%d日")
+
+# ========== 标题（第一个元素） ==========
+st.markdown(f'''
+<div class="main-header">
+    <h1>🏬 天猫新零售数据看板</h1>
+    <div class="sub">客资数据 &middot; 订单数据 &middot; 转化漏斗分析 &nbsp;|&nbsp; 数据更新至 {latest}</div>
+</div>
+''', unsafe_allow_html=True)
+
+# ========== 筛选器（标题下方） ==========
 with st.container():
-    st.markdown('<div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px;">', unsafe_allow_html=True)
-    sc1, sc2, sc3, sc4, sc5 = st.columns([1,1,1,1,1])
-    with sc1:
-        start_date = st.date_input("开始", min_date, key="start")
-    with sc2:
-        end_date = st.date_input("结束", max_date, key="end")
-    with sc3:
+    fc1, fc2, fc3, fc4, fc5 = st.columns([1,1,1,1,1])
+    with fc1:
+        start_date = st.date_input("开始日期", min_date, key="start")
+    with fc2:
+        end_date = st.date_input("结束日期", max_date, key="end")
+    with fc3:
         sel_brand = st.multiselect("品牌", all_brands, default=[], key="brand")
-    with sc4:
+    with fc4:
         sel_cat = st.multiselect("品类", all_cats, default=[], key="cat")
-    with sc5:
+    with fc5:
         sel_center = st.multiselect("运中", all_centers, default=[], key="center")
-    st.markdown('</div>', unsafe_allow_html=True)
 
 # 应用筛选
 def apply_filters(dm, do):
-    dm2 = dm.copy()
-    do2 = do.copy()
+    dm2 = dm.copy(); do2 = do.copy()
     if not dm2["日期"].isna().all():
         dm2 = dm2[(dm2["日期"].dt.date >= start_date) & (dm2["日期"].dt.date <= end_date)]
         do2 = do2[(do2["日期"].dt.date >= start_date) & (do2["日期"].dt.date <= end_date)]
     if sel_brand:
-        dm2 = dm2[dm2["品牌"].isin(sel_brand)]
-        do2 = do2[do2["品牌"].isin(sel_brand)]
+        dm2 = dm2[dm2["品牌"].isin(sel_brand)]; do2 = do2[do2["品牌"].isin(sel_brand)]
     if sel_cat:
-        dm2 = dm2[dm2["品类"].isin(sel_cat)]
-        do2 = do2[do2["品类"].isin(sel_cat)]
+        dm2 = dm2[dm2["品类"].isin(sel_cat)]; do2 = do2[do2["品类"].isin(sel_cat)]
     if sel_center:
-        dm2 = dm2[dm2["运中"].isin(sel_center)]
-        do2 = do2[do2["运中"].isin(sel_center)]
+        dm2 = dm2[dm2["运中"].isin(sel_center)]; do2 = do2[do2["运中"].isin(sel_center)]
     return dm2, do2
 
 df_m, df_o = apply_filters(df_main, df_order)
 
-# ========== KPI计算（与你的代码逻辑一致） ==========
+# ========== KPI计算 ==========
 total_leads = len(df_m)
 valid_mask = df_m["外呼状态"].isin(["高意向", "低意向", "无需外呼"])
 valid_leads = int(valid_mask.sum())
@@ -475,7 +465,7 @@ followed = int(df_m[valid_mask & (~df_m["最新跟进状态"].isin(["未分配",
 order_count = len(df_o)
 total_amount = float(df_o["订单金额"].sum()) if not df_o.empty else 0.0
 
-# 环比计算
+# 环比
 dps_start, dps_end = get_prev_day(start_date, end_date)
 mps_start, mps_end = get_prev_month(start_date, end_date)
 
@@ -498,9 +488,7 @@ dm_m, do_m = filter_df(df_main, df_order, mps_start, mps_end)
 tl_d = len(dm_d); vl_d = int(dm_d["外呼状态"].isin(["高意向","低意向","无需外呼"]).sum()); oc_d = len(do_d); ta_d = float(do_d["订单金额"].sum()) if not do_d.empty else 0.0
 tl_m = len(dm_m); vl_m = int(dm_m["外呼状态"].isin(["高意向","低意向","无需外呼"]).sum()); oc_m = len(do_m); ta_m = float(do_m["订单金额"].sum()) if not do_m.empty else 0.0
 
-latest = max_date.strftime("%Y年%m月%d日")
-st.markdown('<div class="main-header"><div><h1>🏬 天猫新零售数据看板</h1><div class=sub>客资数据 &middot; 订单数据 &middot; 转化漏斗分析 &nbsp;|&nbsp; 数据更新至 ' + latest + '</div></div></div>', unsafe_allow_html=True)
-
+# ========== KPI卡片 ==========
 st.markdown('<div class="kpi-row">', unsafe_allow_html=True)
 c1, c2, c3, c4 = st.columns(4)
 with c1:
@@ -513,65 +501,77 @@ with c4:
     st.markdown(f"""<div class="kpi-card kpi-4"><div class="kpi-label">💰 总金额（万元）</div><div class="kpi-value">{total_amount/10000:.2f} 万</div>{cmp_html(total_amount, ta_d, ta_m)}</div>""", unsafe_allow_html=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ==================== ECharts 图表区 ====================
-
-
-# 转化漏斗（使用你的计算逻辑）
+# ========== 转化漏斗 ==========
 st.markdown('<div class="chart-card">', unsafe_allow_html=True)
 st.markdown('<div class="card-title">📉 客户转化漏斗</div>', unsafe_allow_html=True)
 st_echarts(ec_funnel("客户转化漏斗", [
-    ("总客资", total_leads),
-    ("有效客资", valid_leads),
-    ("已分配", assigned),
-    ("已跟进", followed),
-    ("成交", order_count)
+    ("总客资", total_leads), ("有效客资", valid_leads),
+    ("已分配", assigned), ("已跟进", followed), ("成交", order_count)
 ]), height="400px")
 st.markdown('</div>', unsafe_allow_html=True)
 
-# 月度趋势
+# ========== 日四率曲线图 ==========
+st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+st.markdown('<div class="card-title">📈 每日四率趋势（有效率/分配率/跟进率/成交率）</div>', unsafe_allow_html=True)
+if not df_m.empty and not df_o.empty:
+    df_m_c = df_m.dropna(subset=["日期"]).copy()
+    daily_m = df_m_c.groupby(df_m_c["日期"].dt.date).agg(
+        总客资=("品牌", "count"),
+        有效客资=("外呼状态", lambda x: x.isin(["高意向","低意向","无需外呼"]).sum()),
+        已分配=("最新跟进状态", lambda x: (~x.isin(["未分配"])).sum()),
+        已跟进=("最新跟进状态", lambda x: (~x.isin(["未分配","待查看","待联系"])).sum()),
+    ).reset_index()
+    daily_o = df_o.dropna(subset=["日期"]).groupby(df_o["日期"].dt.date).size().reset_index(name="成交数")
+
+    daily_m = daily_m.merge(daily_o, on="日期", how="left").fillna(0)
+    for col in ["有效客资","已分配","已跟进","成交数","总客资"]:
+        daily_m[col] = pd.to_numeric(daily_m[col], errors="coerce").fillna(0)
+
+    # 四率计算
+    daily_m["有效率"] = daily_m.apply(lambda r: round(r["有效客资"]/r["总客资"]*100,2) if r["总客资"]>0 else 0, axis=1)
+    daily_m["分配率"] = daily_m.apply(lambda r: round(r["已分配"]/r["有效客资"]*100,2) if r["有效客资"]>0 else 0, axis=1)
+    daily_m["跟进率"] = daily_m.apply(lambda r: round(r["已跟进"]/r["已分配"]*100,2) if r["已分配"]>0 else 0, axis=1)
+    daily_m["成交率"] = daily_m.apply(lambda r: round(r["成交数"]/r["有效客资"]*100,2) if r["有效客资"]>0 else 0, axis=1)
+
+    dates_str = [str(d) for d in sorted(daily_m["日期"])]
+    four_rates = {
+        "title": {"text": "", "left": "center"},
+        "tooltip": {"trigger": "axis"},
+        "legend": {"top": 0, "data": ["有效率","分配率","跟进率","成交率"], "textStyle": {"color": "#6b7280"}},
+        "grid": {"left": 55, "right": 30, "bottom": 30, "top": 40},
+        "xAxis": {"type": "category", "data": dates_str, "axisLabel": {"color": "#4a4e57", "rotate": 30}},
+        "yAxis": {"type": "value", "axisLabel": {"color": "#606776", "formatter": "{value}%"}, "splitLine": {"lineStyle": {"color": "#ebeef5"}}},
+        "series": [
+            {"name": "有效率", "type": "line", "data": [float(v) for v in daily_m.sort_values("日期")["有效率"]], "smooth": True, "lineStyle": {"width": 2.5, "color": "#2db55d"}, "itemStyle": {"color": "#2db55d"}, "symbol": "circle", "symbolSize": 5},
+            {"name": "分配率", "type": "line", "data": [float(v) for v in daily_m.sort_values("日期")["分配率"]], "smooth": True, "lineStyle": {"width": 2.5, "color": "#f7ba5e"}, "itemStyle": {"color": "#f7ba5e"}, "symbol": "circle", "symbolSize": 5},
+            {"name": "跟进率", "type": "line", "data": [float(v) for v in daily_m.sort_values("日期")["跟进率"]], "smooth": True, "lineStyle": {"width": 2.5, "color": "#f97316"}, "itemStyle": {"color": "#f97316"}, "symbol": "circle", "symbolSize": 5},
+            {"name": "成交率", "type": "line", "data": [float(v) for v in daily_m.sort_values("日期")["成交率"]], "smooth": True, "lineStyle": {"width": 2.5, "color": "#ef4444"}, "itemStyle": {"color": "#ef4444"}, "symbol": "circle", "symbolSize": 5},
+        ]
+    }
+    st_echarts(four_rates, height="420px")
+else:
+    st.info("暂无数据")
+st.markdown('</div>', unsafe_allow_html=True)
+
+# ========== 月度趋势 ==========
+st.markdown('<div class="chart-card">', unsafe_allow_html=True)
 st.markdown('<div class="card-title">📈 月度客资与订单趋势</div>', unsafe_allow_html=True)
 if not df_m.empty and not df_o.empty:
-    df_m["年月"] = df_m["日期"].dt.to_period("M").astype(str)
-    df_o["年月"] = df_o["日期"].dt.to_period("M").astype(str)
-    months = sorted(set(df_m["年月"]) | set(df_o["年月"]))
-    leads_v = [int(df_m[df_m["年月"]==m].shape[0]) for m in months]
-    orders_v = [int(df_o[df_o["年月"]==m].shape[0]) for m in months]
+    df_m2 = df_m.copy(); df_o2 = df_o.copy()
+    df_m2 = df_m2.dropna(subset=["日期"])
+    df_o2 = df_o2.dropna(subset=["日期"])
+    df_m2["年月"] = df_m2["日期"].dt.to_period("M").astype(str)
+    df_o2["年月"] = df_o2["日期"].dt.to_period("M").astype(str)
+    months = sorted(set(df_m2["年月"]) | set(df_o2["年月"]))
+    leads_v = [int(df_m2[df_m2["年月"]==m].shape[0]) for m in months]
+    orders_v = [int(df_o2[df_o2["年月"]==m].shape[0]) for m in months]
     conv_v = [round(orders_v[i]/leads_v[i]*100,2) if leads_v[i]>0 else 0 for i in range(len(months))]
     st_echarts(ec_bar_line("月度客资数与订单数趋势", months,
         {"客资数": leads_v, "订单数": orders_v, "转化率(%)": conv_v},
         ["客资数", "订单数", "转化率(%)"], ["#4a90e2", "#27ae60", "#e07050"]), height="420px")
+st.markdown('</div>', unsafe_allow_html=True)
 
-# 日转化率面积图
-st.markdown('<div class="card-title">📈 日转化率趋势（面积图）</div>', unsafe_allow_html=True)
-if not df_m.empty and not df_o.empty:
-    # 过滤掉NaT日期
-    df_m_clean = df_m.dropna(subset=["日期"])
-    daily_m = df_m_clean.groupby(df_m_clean["日期"].dt.date).agg(
-        总客资=("品牌", "count"),
-        有效客资=("外呼状态", lambda x: x.isin(["高意向","低意向","无需外呼"]).sum())
-    ).reset_index()
-    daily_o = df_o.dropna(subset=["日期"]).groupby(df_o["日期"].dt.date).size().reset_index(name="成交数")
-    daily_m = daily_m.merge(daily_o, on="日期", how="left")
-    daily_m["成交数"] = pd.to_numeric(daily_m["成交数"], errors="coerce").fillna(0)
-    daily_m["有效客资"] = pd.to_numeric(daily_m["有效客资"], errors="coerce").fillna(0)
-    daily_m["转化率"] = daily_m.apply(lambda r: round(r["成交数"]/r["有效客资"]*100,2) if r["有效客资"]>0 else 0, axis=1)
-    dates_str = [str(d) for d in daily_m["日期"]]
-    conv_area = {
-        "title": {"text": "每日转化率趋势", "left": "center", "textStyle": {"fontSize": 14, "fontWeight": "600", "color": "#1f2937"}},
-        "tooltip": {"trigger": "axis"},
-        "grid": {"left": 50, "right": 30, "bottom": 30, "top": 45},
-        "xAxis": {"type": "category", "data": dates_str, "axisLabel": {"color": "#4a4e57", "rotate": 30}},
-        "yAxis": {"type": "value", "axisLabel": {"color": "#606776", "formatter": "{value}%"}, "splitLine": {"lineStyle": {"color": "#ebeef5"}}},
-        "series": [{"name": "转化率", "type": "line", "data": [float(v) for v in daily_m["转化率"]], "smooth": True,
-                   "lineStyle": {"width": 2, "color": "#ef4444"},
-                   "itemStyle": {"color": "#ef4444"},
-                   "areaStyle": {"color": {"type": "linear", "x": 0, "y": 0, "x2": 0, "y2": 1,
-                                   "colorStops": [{"offset": 0, "color": "rgba(239,68,68,0.3)"}, {"offset": 1, "color": "rgba(239,68,68,0.05)"}]}},
-                   "symbol": "circle", "symbolSize": 4}]
-    }
-    st_echarts(conv_area, height="450px")
-
-# 品类饼图
+# ========== 品类饼图 ==========
 col1, col2 = st.columns(2)
 with col1:
     st.markdown('<div class="chart-card">', unsafe_allow_html=True)
@@ -585,7 +585,7 @@ with col2:
                           ['#667eea','#764ba2','#f093fb','#f5576c','#4facfe','#00f2fe']), height="360px")
     st.markdown('</div>', unsafe_allow_html=True)
 
-# 商品类目 TOP10 分析
+# ========== 商品类目 TOP10 ==========
 st.markdown('<div class="chart-card">', unsafe_allow_html=True)
 st.markdown('<div class="card-title">🏷️ 商品类目 TOP10（按订单金额）</div>', unsafe_allow_html=True)
 if not df_o.empty:
@@ -593,7 +593,7 @@ if not df_o.empty:
     st_echarts(ec_bar_h("商品类目 TOP10", cat_top10.to_dict(), "万元", "#f7ba5e", "#f97316"), height="400px")
 st.markdown('</div>', unsafe_allow_html=True)
 
-# 运营中心分析
+# ========== 运营中心分析 ==========
 col3, col4 = st.columns(2)
 with col3:
     st.markdown('<div class="chart-card">', unsafe_allow_html=True)
@@ -610,7 +610,7 @@ with col4:
         st_echarts(ec_bar_h("运营中心转化率 TOP15", conv_s, "%", "#27ae60", "#10b981"), height="400px")
     st.markdown('</div>', unsafe_allow_html=True)
 
-# 品牌分析
+# ========== 品牌分析 ==========
 col5, col6 = st.columns(2)
 with col5:
     st.markdown('<div class="chart-card">', unsafe_allow_html=True)
@@ -627,7 +627,7 @@ with col6:
         st_echarts(ec_bar_h("品牌转化率 TOP15", bconv_s, "%", "#e07050", "#ee6666"), height="400px")
     st.markdown('</div>', unsafe_allow_html=True)
 
-# 省份销售额 TOP20
+# ========== 省份销售额 TOP20 ==========
 st.markdown('<div class="chart-card">', unsafe_allow_html=True)
 st.markdown('<div class="card-title">🗺️ 省份销售额排行 TOP20</div>', unsafe_allow_html=True)
 if not df_o.empty:
@@ -637,7 +637,7 @@ if not df_o.empty:
     st_echarts(ec_bar_h("省份销售额(万元) TOP20", prov_wan, "万元", "#4facfe", "#00f2fe"), height="500px")
 st.markdown('</div>', unsafe_allow_html=True)
 
-# 城市销售额 TOP15
+# ========== 城市销售额 TOP15 ==========
 st.markdown('<div class="chart-card">', unsafe_allow_html=True)
 st.markdown('<div class="card-title">🏙️ 城市销售额 TOP15</div>', unsafe_allow_html=True)
 if not df_o.empty:
@@ -646,7 +646,7 @@ if not df_o.empty:
     st_echarts(ec_bar_h("城市销售额(万元) TOP15", city, "万元", "#f7ba5e", "#f093fb"), height="400px")
 st.markdown('</div>', unsafe_allow_html=True)
 
-# 全国热力地图
+# ========== 全国运营中心地图 ==========
 st.markdown('<div class="chart-card">', unsafe_allow_html=True)
 st.markdown('<div class="card-title">🌍 全国运营中心分布热力图</div>', unsafe_allow_html=True)
 if not df_m.empty and not df_o.empty:
@@ -657,15 +657,16 @@ if not df_m.empty and not df_o.empty:
         if c in CITY_CENTER:
             geo_data[c] = {"客资": int(cl.get(c,0)), "转化率": round(co.get(c,0)/cl[c]*100,2) if cl[c]>0 else 0}
     if geo_data:
-        chart = ec_map("全国运营中心（气泡大小=客资数，颜色=转化率）", geo_data)
-        components.html(chart.render_embed(), height=520, scrolling=True)
+        import streamlit.components.v1 as components
+        map_html = ec_map_html("全国运营中心（气泡大小=客资数）", geo_data)
+        components.html(map_html, height=540, scrolling=True)
     else:
         st.info("无有效的运营中心地理位置数据")
 else:
-    st.info("无数据")
+    st.info("暂无数据")
 st.markdown('</div>', unsafe_allow_html=True)
 
-# 运营中心汇总明细表
+# ========== 运营中心汇总明细表 ==========
 st.markdown('<div class="chart-card">', unsafe_allow_html=True)
 st.markdown('<div class="card-title">📊 运营中心汇总明细</div>', unsafe_allow_html=True)
 if not df_m.empty and not df_o.empty:
@@ -683,7 +684,7 @@ if not df_m.empty and not df_o.empty:
     st.dataframe(summary, use_container_width=True, hide_index=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# 品牌汇总明细表
+# ========== 品牌汇总明细表 ==========
 st.markdown('<div class="chart-card">', unsafe_allow_html=True)
 st.markdown('<div class="card-title">🏷️ 品牌汇总明细</div>', unsafe_allow_html=True)
 if not df_m.empty and not df_o.empty:
@@ -701,7 +702,7 @@ if not df_m.empty and not df_o.empty:
     st.dataframe(summary_b, use_container_width=True, hide_index=True)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# 页脚
+# ========== 页脚 ==========
 st.markdown("---")
 st.markdown("""
 <div style="text-align:center; padding:1.5rem; background:linear-gradient(135deg, #667eea 0%, #764ba2 100%);
