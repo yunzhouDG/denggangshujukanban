@@ -4,4 +4,4 @@ plotly
 python-dateutil
 openpyxl
 streamlit-echarts
-pyecharts
+pyecharts==2.1.0
