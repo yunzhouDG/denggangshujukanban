@@ -4,3 +4,4 @@ plotly
 python-dateutil
 openpyxl
 streamlit-echarts
+pyecharts
